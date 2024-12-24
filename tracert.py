@@ -4,14 +4,18 @@ import platform
 import sys as s
 from urllib.parse import urlsplit
 import socket
+import re
 
 class UnsupportedOSError(Exception):
     pass
 
-def get_os_cmd(ip=None, dst=None, tracert=False, ping=False):
+class NoValideIpFoundError(Exception):
+    pass
+
+def get_os_cmd(dst=None, tracert=False, ping=False):
     user_os = platform.system().lower()
     if ping:
-        return ["ping", ip] if user_os == "windows" else ["ping", ip]
+        return ["ping", "-c", "1", dst] if user_os != "windows" else ["ping", dst]
     elif tracert:
         if user_os == "windows":
             return ["tracert", dst]
@@ -20,48 +24,73 @@ def get_os_cmd(ip=None, dst=None, tracert=False, ping=False):
         else:
             raise UnsupportedOSError()
     else:
-        raise ValueError("rien n'a ete fourni")
+        raise ValueError("Commande invalide")
 
-def is_valid_ip(ip):
+def is_valid_ip(arg_ip):
     try:
-        cmd = get_os_cmd(ip=ip, ping=True)
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        return result.returncode == 0
-    except Exception as e:
-        print(e)
+        socket.inet_aton(arg_ip) 
+        return True
+    except socket.error:
         return False
-    except subprocess.CalledProcessError:
-        print("sub process echec")
-        s.exit(1)
+
+def extract_ips(subprocess_stdout_result,destination):
+    ip_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b' #chatgpt ma obtenue cette expression réguliére qui identifie la forme d'une ip valide dans un texte , l'explication de comment elle fonctionne est préciser dans le wiki!
+    all_verified_ip = re.findall(ip_pattern, subprocess_stdout_result)  
+    final_list_ip = [] 
+    
+    for ip in all_verified_ip:  
+        if ip != destination: #j'ai exclue l'ip de base
+            final_list_ip.append(ip) 
+
+    return final_list_ip  
+
+
+def is_output_file(tracert_liste_of_ip, output_file, open_mode="w"):
+    if len(tracert_liste_of_ip) > 0 and output_file:
+        with open(output_file, open_mode) as f: 
+            f.write(tracert_liste_of_ip + "\n") #pour que ce soit plus lisible
+    else:
+        NoValideIpFoundError() #on pourrais aussi avoir un erreur si le mode passer en argument existe pas
+        
+
+
+def is_progressive(command,destination, output_file=None):
+    
+    tracert_liste_of_ip = []
+    with subprocess.Popen(command, stdout=subprocess.PIPE, text=True) as p:
+        for line in p.stdout:
+            liste_ip = extract_ips(line,destination)
+            if liste_ip:
+                for ip in liste_ip:
+                    tracert_liste_of_ip.append(ip)
+                    print(tracert_liste_of_ip)
+        is_output_file(tracert_liste_of_ip, output_file, open_mode="a") #j'ai choisie de remplire le fichier de sortie que lorsque on a toute les ip
+
 
 def traceroute(destination, progressive=False, output_file=None):
     try:
         result = get_os_cmd(dst=destination, tracert=True)
         if progressive:
-            with subprocess.Popen(result, stdout=subprocess.PIPE, text=True) as process:
-                for i, line in enumerate(process.stdout, start=1):
-                    print(f"{i} - {line.strip()}")
-                    if output_file:
-                        with open(output_file, "a") as f:
-                            f.write(line)
+            is_progressive(result,destination, output_file)
         else:
             final_result = subprocess.run(result, stdout=subprocess.PIPE, text=True)
             if final_result.returncode == 0:
-                print(final_result.stdout)
-                if output_file:
-                    with open(output_file, "w") as f:
-                        f.write(final_result.stdout)
+                liste_ip = extract_ips(final_result.stdout,destination)
+                for ip in liste_ip:
+                    print(ip)
+                is_output_file(liste_ip, output_file)
             else:
-                print(f"Traceroute: {final_result.stderr}")
+                print(f"Traceroute a echouer {final_result.stderr}")
     except UnsupportedOSError as e:
         print(e)
         s.exit(1)
     except subprocess.CalledProcessError:
-        print("sub process echec")
+        print("erreur dans le subprocess")
         s.exit(1)
     except Exception as e:
         print(e)
         s.exit(1)
+
 
 def resolve_url_to_ip(url):
     try:
@@ -70,7 +99,7 @@ def resolve_url_to_ip(url):
         return socket.gethostbyname(result)
 
     except socket.gaierror:
-        print(f"domaine {url} non resolu.")
+        print(f"le domaine n'a pas pu etre resolu {url}")
         s.exit(1)
     except Exception as e:
         print(e)
@@ -88,17 +117,17 @@ def main():
         destination = args.target
         if args.set == "ip":
             if not is_valid_ip(destination):
-                print("ip pas valide.")
+                NoValideIpFoundError()
                 s.exit(1)
         elif args.set == "url":
             result = resolve_url_to_ip(destination)
             if not result:
-                print(f"url:{destination} pas valide.")
+                NoValideIpFoundError()
                 s.exit(1)
             print(f"url ip trouver: {result}")
             destination = result
 
-        print(f"tentative de contacte {destination}")
+        print("liste des ip :")
         traceroute(destination, progressive=args.progressive, output_file=args.output_file)
 
     except UnsupportedOSError as e:
@@ -107,7 +136,6 @@ def main():
     except Exception as e:
         print(e)
         s.exit(1)
-
 
 if __name__ == "__main__":
     main()
