@@ -77,8 +77,10 @@ def traceroute(destination, progressive=False, output_file=None):
             final_result = subprocess.run(result, stdout=subprocess.PIPE, text=True)
             if final_result.returncode == 0:
                 liste_ip = extract_ips(final_result.stdout,destination)
+                tracert_liste_of_ip = []
                 for ip in liste_ip:
-                    print(ip)
+                    tracert_liste_of_ip.append(ip)
+                    print(tracert_liste_of_ip)
                 is_output_file(liste_ip, output_file)
             else:
                 print(f"Traceroute a echouer {final_result.stderr}")
