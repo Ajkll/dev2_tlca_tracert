@@ -47,8 +47,9 @@ def extract_ips(subprocess_stdout_result,destination):
 
 def is_output_file(tracert_liste_of_ip, output_file, open_mode="w"):
     if len(tracert_liste_of_ip) > 0 and output_file:
-        with open(output_file, open_mode) as f: 
-            f.write(tracert_liste_of_ip + "\n") #pour que ce soit plus lisible
+        with open(output_file, open_mode) as f:
+            for line in tracert_liste_of_ip:
+                f.write(line + "\n")
     else:
         NoValideIpFoundError() #on pourrais aussi avoir un erreur si le mode passer en argument existe pas
         
